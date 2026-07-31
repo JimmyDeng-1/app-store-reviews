@@ -1,66 +1,57 @@
 import sqlite3
 
-def init_db(db_path="app_store_pipeline.db"):
-    # Connects to database (creates the file automatically if missing)
-    conn = sqlite3.connect(db_path)
+def setup_database():
+    # Connect to the database (this will create it if it doesn't exist)
+    conn = sqlite3.connect('app_store_pipeline.db')
     cursor = conn.cursor()
 
-    # Enable foreign keys
-    cursor.execute("PRAGMA foreign_keys = ON;")
-
-    # 1. Ingestion Runs Table
-    cursor.execute("""
+    # 1. Update ingestion_runs with execution metrics
+    cursor.execute('''
     CREATE TABLE IF NOT EXISTS ingestion_runs (
         run_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        app_id TEXT,
+        storefront TEXT,
+        page_limit INTEGER,
         run_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-        target_app_id TEXT NOT NULL,
-        target_storefront TEXT NOT NULL,
-        api_page_limit INTEGER DEFAULT 10,
-        api_review_limit INTEGER DEFAULT 500,
-        status TEXT DEFAULT 'pending'
-    );
-    """)
+        fetched_count INTEGER DEFAULT 0,
+        inserted_count INTEGER DEFAULT 0,
+        skipped_count INTEGER DEFAULT 0,
+        failed_count INTEGER DEFAULT 0
+    )
+    ''')
 
-    # 2. Raw Source Reviews Table
-    cursor.execute("""
+    # 2. Raw reviews for traceability
+    cursor.execute('''
     CREATE TABLE IF NOT EXISTS raw_reviews (
         raw_id INTEGER PRIMARY KEY AUTOINCREMENT,
         run_id INTEGER,
-        app_id TEXT NOT NULL,
-        storefront TEXT NOT NULL,
-        raw_json_payload TEXT NOT NULL,
-        ingested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        raw_payload JSON,
         FOREIGN KEY (run_id) REFERENCES ingestion_runs(run_id)
-    );
-    """)
+    )
+    ''')
 
-    # 3. Normalized Reviews Table
-    cursor.execute("""
+    # 3. Update normalized_reviews with run_id lineage and remove unsupported flags
+    cursor.execute('''
     CREATE TABLE IF NOT EXISTS normalized_reviews (
-        db_id INTEGER PRIMARY KEY AUTOINCREMENT,
-        review_id TEXT NOT NULL,
-        app_id TEXT NOT NULL,
-        storefront TEXT NOT NULL,
-        app_version TEXT,
-        rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+        review_id TEXT,
+        app_id TEXT,
+        storefront TEXT,
+        run_id INTEGER,
+        date TEXT,
+        rating INTEGER,
         title TEXT,
         review_text TEXT,
-        review_timestamp DATETIME,
-        
-        -- Quality & Data Health Flags
-        is_non_english INTEGER DEFAULT 0,
-        is_low_signal INTEGER DEFAULT 0,
-        is_repeated INTEGER DEFAULT 0,
-        has_missing_fields INTEGER DEFAULT 0,
-        
-        -- Deduplication Constraint
-        UNIQUE (review_id, app_id, storefront)
-    );
-    """)
+        version TEXT,
+        is_low_signal BOOLEAN,
+        has_missing_fields BOOLEAN,
+        PRIMARY KEY (review_id, app_id, storefront),
+        FOREIGN KEY (run_id) REFERENCES ingestion_runs(run_id)
+    )
+    ''')
 
     conn.commit()
     conn.close()
-    print(f"✅ Database created successfully at '{db_path}'!")
+    print("Database schema successfully updated with lineage and metrics!")
 
 if __name__ == "__main__":
-    init_db()
+    setup_database()
