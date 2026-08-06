@@ -1,1 +1,2 @@
 *.db
+echo "__pycache__/" >> .gitignore
